@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VPC components templates
+
+Parameters:
+
+  VPCCIDR:
+    Description: VPC CIDR range
+    Type: String
+    Default: 12.0.0.0/16
+
+  publicsubnet1CIDR:
+    Description: public subnet 1 CIDR range
+    Type: String
+    Default: 12.0.1.0/24
+
+  publicsubnet2CIDR:
+    Description: public subnet 2 CIDR range
+    Type: String
+    Default: 12.0.2.0/24
+
+  privatesubnet1CIDR:
+    Description: private subnet 1 CIDR range
+    Type: String
+    Default: 12.0.10.0/24
+
+  privatesubnet2CIDR:
+    Description: private subnet 2 CIDR range 
+    Type: String
+    Default: 12.0.20.0/24
+
+Resources: 
+  # First, a VPC:
+  devVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value:  devVPC
+
+#creating an IGW
+  devIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: devIGW
+
+#Attatching the IGW to a VPC
+  devInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref devIGW
+      VpcId: !Ref devVPC
+
+#creating public subnet 1
+  devPublicsubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref devVPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref publicsubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: devPublicsubnet1
+
+#creating public subnet 2
+  devPublicsubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref devVPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref publicsubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: devPublicsubnet2
+
+#create a public route table for the 2 public subnets
+  devPublicroutetable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref devVPC
+      Tags:
+        - Key: Name
+          Value: devPublicroutetable
+
+#Default public route table
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: devInternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref devPublicroutetable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref devIGW
+
+#public subnet 1 route table association
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref devPublicroutetable
+      SubnetId: !Ref devPublicsubnet1
+
+#public subnet 2 route table association
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref devPublicroutetable
+      SubnetId: !Ref devPublicsubnet2
+
+#creating private subnet 1
+  devPrivatesubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref devVPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref privatesubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: devPrivatesubnet1
+
+#creating private subnet 2
+  devPrivatesubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref devVPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref privatesubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: devPrivatesubnet2 
+
+#creting an EIP
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: devInternetGatewayAttachment
+    Properties:
+      Domain: vpc 
+
+#creating a NAT Gateway
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref devPublicsubnet1 
+
+#creating a private route table for the 2 private subnets
+  devPrivateroutetable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref devVPC
+      Tags:
+        - Key: Name
+          Value: devPrivateroutetable
+
+#creating a default private route table
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref devPrivateroutetable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1 
+
+#creating private subnet 1 route table association
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref devPrivateroutetable
+      SubnetId: !Ref devPrivatesubnet1
+
+#creating private subnet 2 route table association
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref devPrivateroutetable
+      SubnetId: !Ref devPrivatesubnet2 
+
+#Create Security Group
+  devSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open HTTP (port 80) and SSH (port 22)
+      VpcId: !Ref devVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+

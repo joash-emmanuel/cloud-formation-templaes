@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for creating an ECS cluster"
+Resources:
+
+#creating an ECS cluster 
+  devCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: devCluster
+
+
+#creating a task definition
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - "FARGATE"
+      ExecutionRoleArn: "arn:aws:iam::331879450537:role/ecsTaskExecutionRole"
+      Cpu: 1024
+      Memory: 2048
+      NetworkMode: "awsvpc"
+      ContainerDefinitions:
+        - Name: "frontend"
+          Image: "331879450537.dkr.ecr.us-west-2.amazonaws.com/frontend:latest"
+          MemoryReservation: 1024
+          Memory: 2048
+          PortMappings:
+            - ContainerPort: 80
+              Protocol: tcp
+
+#creating a pulic ALB for the frontend-service 
+  FargateAlb:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: FargateAlb
+      Subnets:
+       - !Ref devPublicsubnet1
+       - !Ref devPublicsubnet2
+      Type: application
+
+#ceating a target group for the public ALB
+  FargateTG:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: FargateTG
+      VpcId: !Ref devVPC
+      Protocol: HTTP
+      Port: 80
+      HealthCheckPath: /
+      TargetType: ip
+
+#creating a listener for my ALB
+  FrontendListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref FargateTG
+          Type: forward
+      LoadBalancerArn: !Ref FargateAlb
+      Port: 80
+      Protocol: HTTP
+
+#creating an ECS service
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn: FrontendListener       # Line Added
+    Properties:
+      LaunchType: FARGATE
+      Cluster: !Ref devCluster
+      DesiredCount: 2
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref devSecurityGroup 
+          Subnets:
+            - !Ref devPublicsubnet1
+            - !Ref devPublicsubnet2
+      LoadBalancers:
+        - TargetGroupArn: !Ref FargateTG
+          ContainerPort: 80
+          ContainerName: frontend
+ 

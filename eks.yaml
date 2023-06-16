@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for creating an EKS cluster"
+Resources:
+
+#creating a cluster role  -- ensure to add an inline policy to the cloud-formation role granting full access to IAM in order for it to create the role
+  EKSClusterRole2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+            Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+
+#creating an EKS cluster  --ensure to add an inline policy to the cloud-formation role granting full access to eks in order for it to create the cluster
+  devCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: devCluster
+      Version: "1.26"
+      RoleArn: !GetAtt EKSClusterRole2.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref devSecurityGroup
+        SubnetIds:
+          - !Ref devPublicsubnet1
+          - !Ref devPublicsubnet2
+          - !Ref devPrivatesubnet1
+          - !Ref devPrivatesubnet2
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: true
+        PublicAccessCidrs: [ "0.0.0.0/0" ]
+
+#creating worker node role
+  WorkerNodesRole2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+              - ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+#creating worer nodes
+  WorkerNodegroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref devCluster
+      NodeRole: !GetAtt WorkerNodesRole2.Arn 
+      AmiType: "AL2_x86_64" # AL2_x86_64, AL2_x86_64_GPU, AL2_ARM_64, CUSTOM
+      CapacityType: "ON_DEMAND"  # ON_DEMAND, SPOT
+      InstanceTypes: ["t2.medium"]
+      DiskSize: 20
+      ScalingConfig:
+        MinSize: 2
+        DesiredSize: 2
+        MaxSize: 5
+      Subnets:
+        - !Ref devPrivatesubnet1
+        - !Ref devPrivatesubnet2
+
+#creating fargate profile role
+  fargateprofileRole2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+              - eks-fargate-pods.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+
+#creating a fargate profile
+  EKSFargateProfile:
+    Type: AWS::EKS::FargateProfile
+    Properties:
+      FargateProfileName: devprofile
+      ClusterName: !Ref devCluster
+      PodExecutionRoleArn: !GetAtt fargateprofileRole2.Arn
+      Subnets:
+        - !Ref devPrivatesubnet1
+        - !Ref devPrivatesubnet2
+      Selectors:
+        - Namespace: dev

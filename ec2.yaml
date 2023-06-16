@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2-template
+Resources: 
+#create EC2 instance
+  MyEC2Instance:   #name of the ec2 instance
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-03f65b8614a860c29
+      InstanceType: t2.micro
+      KeyName: jenkins
+      SecurityGroupIds:   #ids is expected to be a list as compared to id which is expected to be a string
+        - !Ref devSecurityGroup
+      SubnetId: !Ref devPublicsubnet1 
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 8
+
